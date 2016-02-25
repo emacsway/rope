@@ -57,27 +57,47 @@ def deprecated(message=None):
     return _decorator
 
 
-def cached(count):
+def cached(size):
     """A caching decorator based on parameter objects"""
     def decorator(func):
-        return _Cached(func, count)
+        cached_func = _Cached(func, size)
+        return lambda *a, **kw: cached_func(*a, **kw)
     return decorator
 
 
 class _Cached(object):
 
-    def __init__(self, func, count):
+    def __init__(self, func, size):
         self.func = func
-        self.cache = []
-        self.count = count
+        self.cache = dict()
+        self.order = []
+        self.size = size
 
     def __call__(self, *args, **kwds):
-        key = (args, kwds)
-        for cached_key, cached_result in self.cache:
-            if cached_key == key:
-                return cached_result
-        result = self.func(*args, **kwds)
-        self.cache.append((key, result))
-        if len(self.cache) > self.count:
-            del self.cache[0]
+        key = to_hashable((args, kwds))
+        try:
+            result = self.cache[key]
+        except KeyError:
+            result = self.func(*args, **kwds)
+            self.cache[key] = result
+            self.order.insert(0, key)
+            if len(self.cache) > self.size:
+                del self.cache[self.order.pop()]
+        else:
+            self.order.remove(key)  # FIXME: avoid iteration
+            self.order.insert(0, key)
         return result
+
+
+def to_hashable(obj):
+    """
+    Makes a hashable object from a dictionary, list, tuple, set etc.
+    """
+    if isinstance(obj, (list, tuple)):
+        return tuple(to_hashable(i) for i in obj)
+    elif isinstance(obj, (set, frozenset)):
+        return frozenset(to_hashable(i) for i in obj)
+    elif isinstance(obj, dict):
+        new_obj = {k: to_hashable(v) for k, v in obj.items()}
+        return frozenset(new_obj.items())
+    return obj
