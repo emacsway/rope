@@ -1,4 +1,6 @@
+import random
 import warnings
+from time import time
 
 
 def saveit(func):
@@ -65,7 +67,7 @@ def cached(size):
     return decorator
 
 
-class _Cached(object):
+class _CachedV1(object):
 
     def __init__(self, func, size):
         self.func = func
@@ -87,6 +89,47 @@ class _Cached(object):
             self.order.remove(key)  # FIXME: avoid iteration
             self.order.insert(0, key)
         return result
+
+
+# TODO: tests and benchmarks
+class _Cached(object):
+
+    def __init__(self, func, size=1000, cull_frequency=0.2):
+        """
+        @param collections.Callable func: cached callable object
+        @param int size: max size of cache
+        @param float cull_frequency: The fraction of entries that are culled\
+            when size is reached. Greater - frequently.
+        """
+        self.func = func
+        self.cache = dict()
+        self.size = size
+        self.cull_frequency = cull_frequency
+
+    def __call__(self, *args, **kwds):
+        key = to_hashable((args, kwds))
+        try:
+            self.cache[key][1] = time()
+            result = self.cache[key][0]
+        except KeyError:
+            result = self.func(*args, **kwds)
+            self.cache[key] = [result, time()]
+            if self._cull_required():
+                self._cull()
+        return result
+
+    def _cull_required(self):
+        return random.random() < self.cull_frequency
+
+    def _cull(self):
+        cache_len = len(self.cache)
+        if cache_len > self.size:
+            excess = cache_len - self.size
+            lru_seq = sorted(self.cache.items(), key=lambda x: x[1][1])
+            for i, (key, val) in enumerate(lru_seq):
+                del self.cache[key]
+                if i == excess:
+                    break
 
 
 def to_hashable(obj):
