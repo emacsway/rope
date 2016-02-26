@@ -1,6 +1,5 @@
 import random
 import warnings
-from time import time
 
 
 def saveit(func):
@@ -94,42 +93,48 @@ class _CachedV1(object):
 # TODO: tests and benchmarks
 class _Cached(object):
 
-    def __init__(self, func, size=1000, cull_frequency=0.2):
+    def __init__(self, func, max_size=1000, cull_frequency=0.1):
         """
-        @param collections.Callable func: cached callable object
-        @param int size: max size of cache
-        @param float cull_frequency: The fraction of entries that are culled\
-            when size is reached. Greater - frequently.
+        :param collections.Callable func: cached callable object
+        :param int max_size: max max_size of cache
+        :param float cull_frequency: The fraction of entries that are culled\
+            when max_size is reached. Greater - frequently.
         """
         self.func = func
         self.cache = dict()
-        self.size = size
+        self.max_size = max_size
         self.cull_frequency = cull_frequency
+        self.counter = 0
 
     def __call__(self, *args, **kwds):
         key = to_hashable((args, kwds))
         try:
-            self.cache[key][1] = time()
             result = self.cache[key][0]
         except KeyError:
             result = self.func(*args, **kwds)
-            self.cache[key] = [result, time()]
+            self.cache[key] = [result, self._get_stamp()]
             if self._cull_required():
                 self._cull()
+        else:
+            self.cache[key][1] = self._get_stamp()
         return result
+
+    def _get_stamp(self):
+        """
+        :return: stamp, currently uses counter (can be timestamp).
+        """
+        self.counter += 1
+        return self.counter
 
     def _cull_required(self):
         return random.random() < self.cull_frequency
 
     def _cull(self):
-        cache_len = len(self.cache)
-        if cache_len > self.size:
-            excess = cache_len - self.size
-            lru_seq = sorted(self.cache.items(), key=lambda x: x[1][1])
-            for i, (key, val) in enumerate(lru_seq):
+        current_size = len(self.cache)
+        if current_size > self.max_size:
+            lru_list = sorted(self.cache.items(), key=lambda x: x[1][1])
+            for key, val in lru_list[:current_size - self.max_size]:
                 del self.cache[key]
-                if i == excess:
-                    break
 
 
 def to_hashable(obj):
