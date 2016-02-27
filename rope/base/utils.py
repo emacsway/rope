@@ -66,30 +66,6 @@ def cached(size):
     return decorator
 
 
-class _CachedV1(object):
-
-    def __init__(self, func, size):
-        self.func = func
-        self.cache = dict()
-        self.order = []
-        self.size = size
-
-    def __call__(self, *args, **kwds):
-        key = to_hashable((args, kwds))
-        try:
-            result = self.cache[key]
-        except KeyError:
-            result = self.func(*args, **kwds)
-            self.cache[key] = result
-            self.order.insert(0, key)
-            if len(self.cache) > self.size:
-                del self.cache[self.order.pop()]
-        else:
-            self.order.remove(key)  # FIXME: avoid iteration
-            self.order.insert(0, key)
-        return result
-
-
 # TODO: tests and benchmarks
 class _Cached(object):
 
@@ -109,15 +85,16 @@ class _Cached(object):
     def __call__(self, *args, **kwds):
         key = to_hashable((args, kwds))
         try:
-            result = self.cache[key][0]
+            item = self.cache[key]
         except KeyError:
-            result = self.func(*args, **kwds)
-            self.cache[key] = [result, self._get_stamp()]
+            value = self.func(*args, **kwds)
+            self.cache[key] = [value, self._get_stamp()]
             if self._cull_required():
                 self._cull()
         else:
-            self.cache[key][1] = self._get_stamp()
-        return result
+            item[1] = self._get_stamp()
+            value = item[0]
+        return value
 
     def _get_stamp(self):
         """
@@ -146,6 +123,5 @@ def to_hashable(obj):
     elif isinstance(obj, (set, frozenset)):
         return frozenset(to_hashable(i) for i in obj)
     elif isinstance(obj, dict):
-        new_obj = {k: to_hashable(v) for k, v in obj.items()}
-        return frozenset(new_obj.items())
+        return frozenset((k, to_hashable(v)) for k, v in obj.items())
     return obj
